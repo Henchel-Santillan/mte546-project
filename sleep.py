@@ -1,67 +1,55 @@
 from filterpy import ExtendedKalmanFilter as EKF
 import numpy as np
 
-from datetime import  datetime
-from xml.etree import ElementTree as ET
+from enum import Enum
+import csv
 import os
 
-# Change this value to wherever the data is saved
-DEFAULT_XML_SLEEP_DATA_PATH = f"{os.environ["USERPROFILE"]}/Downloads/export.xml"
-DEFAULT_SEARCH_YEAR = "2022"
-
-NUM_STATES = 0  # FIX LATER
-NUM_MEASUREMENTS = 0
+NUM_STATES = 4 # awake, core sleep = N1/N2, REM, Deep sleep = N3
+NUM_MEASUREMENTS = 3  # HRV, HR, motion (duration)
 
 ## MEASUREMENTS
-hrv_data = []
+class DataType(Enum):
+    MOTION = 1,
+    HEART_RATE = 2,
 
-# Sleep data is in minutes
-sleep_data_dict = dict.fromkeys(["HKCategoryValueSleepAnalysisAwake", "HKCategoryValueSleepAnalysisAsleepCore", 
-                                "HKCategoryValueSleepAnalysisAsleepDeep", "HKCategoryValueSleepAnalysisAsleepREM"], [])
+class DataContainer:
+    def __init__(self, time=[], data=[]):
+        self.time = time
+        self.data = data
 
-def extract_hrv_data(record) -> None:
-    hrv_metadata_list = record.find("HeartRateVariabilityMetadataList")
-    # ibpm = InstantaneousBeatsPerMinute
-    for ibpm_entry in hrv_metadata_list.findall("InstantaneousBeatsPerMinute"):
-        bpm_value = ibpm_entry.get("bpm")
-        hrv_data.append(int(bpm_value))
+# Change this value to wherever the data is saved
+DEFAULT_DATA_ROOT_DIR=f"{os.getenv("USERPROFILE")}/Downloads/motion-and-heart-rate-from-a-wrist-worn-wearable-and-labeled-sleep-from-polysomnography-1.0.0"
+data_map = dict.fromkeys([DataType.MOTION.name, DataType.HEART_RATE.name], DataContainer)
 
-def extract_sleep_state_duration_data(record, sleep_key: str) -> None:
-    start_date = record.get("startDate")
-    end_date = record.get("endDate")
-
-    # Perfom datetime subtraction to get relative hour / minute
-    fmt_str = "%Y-%m-%d %H:%M:%S %z"
-    start_date_fmt = datetime.strptime(start_date, fmt_str)
-    end_date_fmt = datetime.strptime(end_date, fmt_str)
-
-    duration = end_date_fmt - start_date_fmt
-    total_mins = duration.total_seconds() / 60.0
-    sleep_data_dict[sleep_key].append(total_mins)
-
-def extract_all_from_xml_file(file_path: str) -> None:
-    tree = ET.parse(file_path)
-    root = tree.getroot()
-
-    # Parse each 'Record' tag
-    for record in root.iter("Record"):
-        source_name = record.get("sourceName")
-        if source_name == "Jason's Apple Watch":
-            record_type = record.get("type")
-            match record_type:
-                case "HKCategoryTypeIdentifierSleepAnalysis":
-                    # Sleep analysis data
-                    creation_date = record.get("creationDate")
-                    if (creation_date.split("-")[0] == DEFAULT_SEARCH_YEAR):
-                        # example date: "2025-03-26 23:23:39 -0400"
-                        # split will give ['2025', '03', '26 23:23:39 ', ' 0400']
-                        # so we get the first one in the list
-                        extract_sleep_state_duration_data(record, record.get("value"))
-                case "HKQuantityTypeIdentifierHeartRateVariabilitySDNN":
-                    # Heart rate variability data
-                    extract_hrv_data(record)
+def __extract_data(file, data_type: DataType) -> None:
+    container = DataContainer()
+    with open(file, mode="r") as f:
+        # Motion data is space separated, heart rate data is comma-separated
+        delim = " " if data_type == DataType.MOTION else ","
+        csv_file = csv.reader(f, delimiter=delim)
+        for line in csv_file:
+            container.time.append(line[0])
+            match data_type:
+                case DataType.MOTION:
+                    # x, y, z -> pack into a tuple
+                    container.data.append((line[1], line[2], line[3]))
+                case DataType.HEART_RATE:
+                    # Just BPM data, append directly
+                    container.data.append(line[1])
                 case _:
-                    pass          
+                    continue
+    
+    # Add the container to the data map
+    data_map[data_type.name] = container
+
+def parse_data_files(data_root_dir: str) -> None:
+    types = [e for e in DataType]
+    for type in types:
+        data_path = os.path.join(data_root_dir, type.name.lower())
+        for root, _, files in os.walk(data_path):
+            for file in files:
+                __extract_data(os.path.join(root, file), type)
 
 def HJacobian(x, *args):
     return
@@ -69,37 +57,47 @@ def HJacobian(x, *args):
 def Hx(x, *args):
     return
 
-
 def main():
-    # Extract the sleep measurements from the XML file
-    extract_all_from_xml_file(DEFAULT_XML_SLEEP_DATA_PATH)
+    # Extract the data from the .txt files
+    parse_data_files(DEFAULT_DATA_ROOT_DIR)
+    print(data_map[DataType.MOTION.name].data)
 
     # Initialize EKF
-    Q_mat = ...
-    R_mat = ...
+    # Q_mat = np.array([
+    #     [0.5, 0, 0],
+    #     [0, 0.5, 0],
+    #     [0, 0, 0.5]
+    # ])
+    # R_mat = np.array([
+    #     [0.5, 0, 0],
+    #     [0, 0.5, 0],
+    #     [0, 0, 0.5]
+    # ])
     
-    ekf = EKF(NUM_STATES, NUM_MEASUREMENTS)
-    ekf.x = ... # initial state
+    # ekf = EKF(NUM_STATES, NUM_MEASUREMENTS)
+    # ekf.x = np.array([1, 0, 0, 0]) # initial state (start awake)
     
-    ekf.P = Q_mat
-    ekf.R = R_mat
-    ekf.Q = Q_mat
-    ekf.F = ... # model
-    ekf.H = None
+    # ekf.P = np.array([
+    #     [0.85, 0.15, 0, 0],
+    #     [0.1, 0.6, 0.25, 0.05],
+    #     [0.05, 0.5, 0.4, 0.05],
+    #     [0, 0.7, 0.1, 0.2]
+    #     ]) # model: each row represents the probability of transitioning form one state to another
+    # ekf.H = None
     
-    # Main Loop
-    estimated_states = []
-    i = 0
-    z = ... # measurement readings, shape: [NUM_MEASUREMENTS, N]
+    # # Main Loop
+    # estimated_states = []
+    # i = 0
+    # z = ... # measurement readings, shape: [NUM_MEASUREMENTS, N]
     
-    while True:
-        curr_z = z[:, i]
-        curr_z = z.reshape(-1, 1)
+    # while True:
+    #     curr_z = z[:, i]
+    #     curr_z = z.reshape(-1, 1)
         
-        ekf.predict_update(curr_z, HJacobian, Hx)
-        posterior_state = ekf.x
-        estimated_states.append(posterior_state)
-        i+=1
+    #     ekf.predict_update(curr_z, HJacobian, Hx)
+    #     posterior_state = ekf.x
+    #     estimated_states.append(posterior_state)
+    #     i+=1
     
 
 if __name__ == "__main__":
