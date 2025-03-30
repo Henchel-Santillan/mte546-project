@@ -24,9 +24,6 @@ def plot_heartrate_data(person_i: int) -> None:
         # Regressors / intercept
         X = np.column_stack([np.ones_like(hr_time), hr_time, [time ** 2 for time in hr_time]])
 
-        # # Fit robust model (HuberT norm)
-        # robust_model = sm.RLM(hr_data, X, M=sm.robust.norms.HuberT()).fit()
-
         # Use bisquare robust LS
         robust_model = sm.RLM(hr_data, X, M=sm.robust.norms.TukeyBiweight()).fit()
         print(robust_model.summary())
@@ -65,17 +62,15 @@ def plot_motion_data(person_i: int, should_print=False) -> None:
         motion_val = data_map[DataType.MOTION.name][person_i].data
 
         # Regressors / intercepts
-        #X = sm.add_constant(motion_time)
         X = np.column_stack([np.ones_like(motion_time), 
                             motion_time, 
                             [time ** 2 for time in motion_time],
                             [time ** 3 for time in motion_time],
                             [time ** 4 for time in motion_time]])
 
-        # Fit robust model (HuberT norm)
+        # Fit robust model (Tukey bisquare)
         index = axis.value - 1
 
-        #model = sm.RLM([val[index] for val in motion_val], X, M=sm.robust.norms.HuberT()).fit()
         model = sm.RLM([val[index] for val in motion_val], X, M=sm.robust.norms.TukeyBiweight()).fit()
         if should_print:
             print(model.summary())

@@ -10,12 +10,18 @@ class DataType(Enum):
     STATE = 3,  # ground truth data
 
 class DataContainer:
-    def __init__(self):
+    def __init__(self, person_id):
+        self.person_id = person_id
         self.time = []
         self.data = []
 
 # Change this value to wherever the data is saved
 DEFAULT_DATA_ROOT_DIR=f"{os.getenv('USERPROFILE')}/Downloads/motion-and-heart-rate-from-a-wrist-worn-wearable-and-labeled-sleep-from-polysomnography-1.0.0"
+type_to_dir_name = {
+    DataType.MOTION : "motion",
+    DataType.HEART_RATE : "heart_rate",
+    DataType.STATE : "labels"
+}
 
 # Data map has keys "MOTION" and "HEART_RATE", and value of DataContainer
 # data_map[key].time gives a 1D list of timestamps
@@ -26,8 +32,8 @@ data_map = {DataType.MOTION.name: [],
             DataType.HEART_RATE.name: [],
             DataType.STATE.name: []}
 
-def __extract_data(file, data_type: DataType) -> DataContainer:
-    container = DataContainer()
+def extract_csv_data(file, person_id, data_type: DataType) -> DataContainer:
+    container = DataContainer(person_id)
     with open(file, mode="r") as f:
         # Motion data is space separated, heart rate data is comma-separated
         delim = "," if data_type == DataType.HEART_RATE else " "
@@ -57,34 +63,41 @@ def __extract_data(file, data_type: DataType) -> DataContainer:
                         continue
     return container
 
-# The key is to parse
-def parse_data_file(data_root_dir: str, person_id: str, type_key=None) -> None:
-    type_dict = {
-        DataType.MOTION : "motion",
-        DataType.HEART_RATE : "heart_rate",
-        DataType.STATE : "labels"
-    }
+def append_container(data_root_dir, person_id, key, value):
+    match key:
+        case DataType.MOTION:
+            file_name = f"{person_id}_acceleration.txt"
+        case DataType.HEART_RATE:
+            file_name = f"{person_id}_heartrate.txt"
+        case DataType.STATE:
+            file_name = f"{person_id}_labeled_sleep.txt"
 
-    def append_container(data_root_dir, key, value):
-        match key:
-            case DataType.MOTION:
-                file_name = f"{person_id}_acceleration.txt"
-            case DataType.HEART_RATE:
-                file_name = f"{person_id}_heartrate.txt"
-            case DataType.STATE:
-                file_name = f"{person_id}_labeled_sleep.txt"
-        data_path = os.path.join(data_root_dir, value, file_name)
-        container = __extract_data(data_path, key)
+    data_path = os.path.join(data_root_dir, value, file_name)
+    container = extract_csv_data(data_path, person_id, key)
+
+    if (not any(c.person_id == person_id for c in data_map[key.name])):
+        # prevent addition of duplicates to the map
         data_map[key.name].append(container)
 
+# The key is to parse
+def parse_data_file(data_root_dir: str, person_id: str, type_key=None) -> None:
     if type_key is None:
         # Can just read the files directly instead of walking through the entire directory
-        for key, value in type_dict.items():
-            append_container(data_root_dir, key, value)
+        for key, value in type_to_dir_name.items():
+            append_container(data_root_dir, person_id, key, value)
     else:
-        value = type_dict[type_key]
-        append_container(data_root_dir, type_key, value)
+        value = type_to_dir_name[type_key]
+        append_container(data_root_dir, person_id, type_key, value)
 
-def parse_data_files(data_root_dir: str, person_ids: List[str], key=None):
+def parse_data_files(data_root_dir: str, person_ids: List[str] = None, key=None):
+    if person_ids is None and key is not None:
+        person_ids = []
+        # Assume we are using every person
+        data_path = os.path.join(data_root_dir, type_to_dir_name[key])
+        for _, _, files in os.walk(data_path):
+            for file in files:
+                split_name = file.split("_")
+                person_ids.append(split_name[0])
+            
     for person_id in person_ids:
         parse_data_file(data_root_dir, person_id, key)
