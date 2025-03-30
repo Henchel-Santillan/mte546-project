@@ -1,5 +1,7 @@
 from filterpy.kalman import ExtendedKalmanFilter as EKF
+
 from extract import *
+from model import *
 from plot import *
 
 import numpy as np
@@ -14,28 +16,31 @@ NUM_STATES = 7 # awake, core sleep = N1/N2, REM, Deep sleep = N3
 NUM_MEASUREMENTS = 3  # HRV, HR, motion (duration)
 DEFAULT_PERSON_INDEX = 0
 
+sleep_state_prob_mat = []
+R_mat = []
+
 ############################## SENSOR MODELS and NOISE #################################
 # Assume zero mean Gaussian for noise
 def __gaussian_noise(mean=0, std_dev=0, num_samples=1):
     return np.random.normal(mean, std_dev, num_samples)
 
-def hr_sensor_model_ekf(time, r_mat, has_noise=True):
+def hr_sensor_model_ekf(time, has_noise=True):
     est_hr = 2.855e-08 * time ** 2 - 0.0014 * time + 73.0994
     if has_noise:
-        est_hr += __gaussian_noise(0, np.sqrt(r_mat[0, 0]))
+        est_hr += __gaussian_noise(0, np.sqrt(R_mat[0, 0]))
     return est_hr
 
-def imu_sensor_model_ekf(time, r_mat, axis: ImuAxis, has_noise=True):
+def imu_sensor_model_ekf(time, axis: ImuAxis, has_noise=True):
     match axis:
         case ImuAxis.X_AXIS:
             est_imu = -7.124e-17 * (time ** 4) + 4.18e-12 * (time ** 3) - 7.583e-08 * (time ** 2) + 0.0004 * time + 1.683e-07
-            std_dev = np.sqrt(r_mat[1, 1])
+            std_dev = np.sqrt(R_mat[1, 1])
         case ImuAxis.Y_AXIS:
             est_imu = -5.469e-17 * (time ** 4) + 3.283e-12 * (time ** 3) - 5.88e-08 * (time ** 2) + 0.0003 * time + 1.205e-07
-            std_dev = np.sqrt(r_mat[2, 2])
+            std_dev = np.sqrt(R_mat[2, 2])
         case ImuAxis.Z_AXIS:
             est_imu = -1.011e-16 * (time ** 4) + 5.957e-12 * (time ** 3) - 1.084e-07 * (time ** 2) - 0.0006 * time + 2.473e-07
-            std_dev = np.sqrt(r_mat[3, 3])
+            std_dev = np.sqrt(R_mat[3, 3])
         case _:
             return
     
@@ -54,20 +59,45 @@ def get_measurement_variances(person_i: int):
     return (var_hr, var_imu_x, var_imu_y, var_imu_z)
 
 ########################### EKF FUNCTIONS ##################################
-def HJacobian(x, *args):
-    """
-    Function that computes the HJacobian
-    """
-    return
+hr_weights = [1, 0.7, 0.5, 1.3]
+base_imu_weights = [1.6, 0.8, 0.1, 1.3]
 
-def Hx(x, *args):
+def HJacobian(x, time, *args):
     """
-    Given state vector x, return what the measurement 
-    corresponding to t
+    Function that computes the HJacobian.
+    Take partial derivative of measurements with respect to the states.
+    Yields m x n matrix, m = number of measurements, n = number of states
     """
-    return
+    hr = hr_weights * hr_sensor_model_ekf(time)
+    imu_x = base_imu_weights * imu_sensor_model_ekf(time, ImuAxis.X_AXIS)
+    imu_y = base_imu_weights * imu_sensor_model_ekf(time, ImuAxis.Y_AXIS)
+    imu_z = base_imu_weights* imu_sensor_model_ekf(time, ImuAxis.Z_AXIS)
+    return np.array([hr, imu_x, imu_y, imu_z])
 
-def get_data_at_time(time: int) -> list:
+def Hx(x, time, *args):
+    """
+    Given state vector x, return the corresponding measurement for this step
+    """
+    # stage_nums = [i for i in range(5)]
+
+    # # Extract the sleep stage probabilities from the state vector
+    # # Pad 3rd index with "0", since "4" doesn't correspond to any sleep state
+    # sleep_probabilities = [x[0], x[1], x[3], 0, x[2]]
+    # time = find_best_time(sleep_state_prob_mat, sleep_probabilities, stage_nums)
+
+    # Columns: Wake, Core, Deep, REM, use the sleep probabilities as weights
+    # Time-varying linear weighted sum approach, may need tuning or a different approach
+    sleep_probabilities = np.array([x[0], x[1], x[3], x[2]])
+
+    z1 = np.dot(hr_weights * hr_sensor_model_ekf(time), sleep_probabilities)
+    z2 = np.dot(base_imu_weights * imu_sensor_model_ekf(time, ImuAxis.X_AXIS), sleep_probabilities)
+    z3 = np.dot(base_imu_weights * imu_sensor_model_ekf(time, ImuAxis.Y_AXIS), sleep_probabilities)
+    z4 = np.dot(base_imu_weights * imu_sensor_model_ekf(time, ImuAxis.Z_AXIS), sleep_probabilities)
+
+    # Return the vector of expected measurements
+    return np.array([z1, z2, z3, z4]).reshape(4, 1)
+
+def get_data_at_time(time: int):
     data = []
     time_arrays = [
         data_map[DataType.HEART_RATE.name][DEFAULT_PERSON_INDEX].time,
@@ -107,6 +137,8 @@ def main():
     # parse_data_file(DEFAULT_DATA_ROOT_DIR, "4314139")
     # plot_heartrate_data(DEFAULT_PERSON_INDEX)
     # plot_motion_data(DEFAULT_PERSON_INDEX)
+
+    sleep_state_prob_mat = compute_sleep_probabilities()
 
     # Initialize EKF
     Q_mat = np.array([
@@ -177,7 +209,6 @@ def main():
     estimated_states = []  # store them in an array so we can see how it evolves
     ground_truth_states = []
 
-
     start_time = 930 # or 1 idk
     final_time = 14400 # 4 hours in seconds
 
@@ -188,7 +219,7 @@ def main():
         curr_z = np.array(patient_data[:-1])  # exclude ground truth state
         curr_z = curr_z.reshape(-1, 1)
 
-        ekf.predict_update(curr_z, HJacobian, Hx)
+        ekf.predict_update(curr_z, HJacobian, Hx, args=(curr_time), hx_args=(curr_time))
         posterior_state = ekf.x
 
         # record states for plotting

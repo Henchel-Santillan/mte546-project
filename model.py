@@ -18,8 +18,7 @@ def compute_sleep_probabilities(person_ids: List[str] = None, test_data=None):
     * Column: "bin" or the integer value corresponding to the sleep state
     * (Row, Column) --> the probability of that sleep state at that time index
 
-    We are only interested in 0, 1, 2, 3, and 5: since the data also gives these values only
-    and -1 is filtered out, -1 or 4 is the same
+    We are only interested in 0, 1, 2, 3, and 5
 
     # # Cumulative distribution function, sum over columns
     # cdf = np.cumsum(np.array(probabilities), axis=1)
@@ -49,24 +48,28 @@ def compute_sleep_probabilities(person_ids: List[str] = None, test_data=None):
 
         counts = np.bincount(col.astype(int), minlength=6)  # 0 to 5
 
+        # Merge the first and second results, since this represents "core" sleep
+        # which merges N1 and N2)
+        core_count = counts[1] + counts[2]
+        revised_counts = [counts[0], core_count]
+        for i in range(3, len(counts)):
+            revised_counts.append(counts[i])
+
+        revised_counts = np.array(revised_counts)
         # Normalize to get probabilities
-        probs = counts / counts.sum()
+        probs = revised_counts / revised_counts.sum()
+        # probs = counts / counts.sum()
+
         probabilities.append(probs)
 
     return np.array(probabilities)
 
-def find_closest_time_index(prob_mat, target_prob, sleep_state):
-    """
-    Find the first time index where the probability of 'value' is closest to target_prob.
-    """
-    # Calculate the absolute differences between the CDF and target_prob
-    diffs = np.abs(prob_mat[:, sleep_state] - target_prob)
-    index = np.argmin(diffs)
+def find_sleep_probabilities(prob_mat, time):
+    # Get the probabilities from the row corresponding to the nearest time
+    time_index = time / TIME_STEP_SEC
+    return prob_mat[time_index]
 
-    # Index will correspond to the closest match
-    return index
-
-def find_time(prob_mat, target_probs: List[float], sleep_states: List[int]):
+def find_best_time(prob_mat, target_probs: List[float], sleep_states: List[int]):
     """
     Find the first time index where the probabilities of sleep_states yield the
     minimum cumulative difference with target_probs
@@ -100,11 +103,12 @@ def main():
     prob_mat = compute_sleep_probabilities()
 
     # Target probs have to add to 1
-    # Index 4 must always be 0
-    target_probs = [0.1, 0.2, 0.3, 0.3, 0, 0.1]
-    sleep_states = [i for i in range(6)]
+    # Index 4 must always be 0 - still need to pad
+    # represents: wake, core, deep, <invalid>, rem
+    target_probs = [0.2, 0.2, 0.2, 0, 0.2]
+    sleep_states = [i for i in range(5)]
 
-    index = find_time(prob_mat, target_probs, sleep_states)
+    index = find_best_time(prob_mat, target_probs, sleep_states)
     print(index)
 
 if __name__ == "__main__":
