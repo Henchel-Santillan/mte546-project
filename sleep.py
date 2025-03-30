@@ -8,7 +8,13 @@ from typing import List
 import csv
 import os
 
-NUM_STATES = 4 # awake, core sleep = N1/N2, REM, Deep sleep = N3
+NUM_STATES = 7 # awake, core sleep = N1/N2, REM, Deep sleep = N3
+# from labels:
+# 0: awake
+# 1: n1
+# 2: n2
+# 3: n3 (deep)
+# 5: rem
 NUM_MEASUREMENTS = 3  # HRV, HR, motion (duration)
 TIME_STEP_SEC = 30  # time step our simulation loops through (in seconds)
 DEFAULT_PERSON_INDEX = 0
@@ -219,7 +225,7 @@ def plot_motion_data(person_i: int) -> None:
     fig, axs = plt.subplots(3, 1)
 
     labels = [("ax", "ax (Robust LS)"), ("ay", "ay (Robust LS)"), ("az", "az (Robust LS)")]
-    
+
     # Motion
     motion_time = data_map[DataType.MOTION.name][person_i].time
     motion_val = data_map[DataType.MOTION.name][person_i].data
@@ -237,7 +243,7 @@ def plot_motion_data(person_i: int) -> None:
         axs[index].legend()
 
     fig.suptitle("Raw Acceleration Data")
-    
+
     plt.tight_layout()
     plt.show()
 
@@ -247,8 +253,8 @@ def plot_ground_truth(person_i: int) -> None:
     state_val = data_map[DataType.STATE.name][person_i].data
     state_time = data_map[DataType.STATE.name][person_i].time
     plt.plot(state_time, state_val, label="Ground Truth State")
-    
-    
+
+
 def plot_ekf_states(states: np.array, ground_truth_states: list, start_time: float, final_time: float):
     labels = [
         "P(awake)",
@@ -260,26 +266,50 @@ def plot_ekf_states(states: np.array, ground_truth_states: list, start_time: flo
         "T_core"
     ]
     time_range = np.arange(start_time, final_time + TIME_STEP_SEC, TIME_STEP_SEC)
-    
+
     fig, axes = plt.subplots(3, 1, figsize=(16,8))
-    
+
     # EKF outputs
     for state_i in labels:
         axes[0].plot(time_range[: len(time_range)-1], states[state_i, :], label=labels[state_i])
-    
+
     axes[0].set_title("Predicted States")
     axes[0].set_xlabel("Time [s]")
     axes[0].set_ylabel("State")
     axes[0].legend()
     axes[0].grid(True)
-    
-    
+
+
+
     # Ground truth state vs predicted state (high %)
-    
-    
-    
-    # Sleep score 
-    
+    transformed_groundtruth_states = np.where(ground_truth_states == 2, 1, ground_truth_states)
+    transformed_groundtruth_states = np.where(transformed_groundtruth_states == 3, 2, transformed_groundtruth_states)
+    transformed_groundtruth_states = np.where(transformed_groundtruth_states == 5, 3, transformed_groundtruth_states)
+    axes[1].plot(time_range[: len(time_range)-1], transformed_groundtruth_states, label="Ground Truth sleep state")  # convert labelled y-axis to values that are easier to comprehend
+
+    indices_of_highest_probability_states = np.argmax(states[:4, :], axis=0)  # 1xN (0: awake, 1: core, 2: deep, 3: rem)
+    axes[1].plot(time_range[: len(time_range)-1], indices_of_highest_probability_states, label="Predicted Sleep States")
+
+    state_labels = {0: "Awake", 1: "Core", 2: "Deep", 3: "REM"}  # change y-axis labels for clarity
+    axes[1].set_yticks(list(state_labels.keys()))
+    axes[1].set_yticklabels(list(state_labels.values()))
+
+    axes[1].set_title("Final Predicted Sleep State")
+    axes[1].set_xlabel("Time [s]")
+    axes[1].set_ylabel("State")
+    axes[1].legend()
+    axes[1].grid(True)
+
+
+
+    # Sleep score
+    axes[2].plot(time_range[: len(time_range)-1], states[4, :])
+    axes[2].set_title("Sleep Score")
+    axes[2].set_xlabel("Time [s]")
+    axes[2].set_ylabel("Sleep Score")
+    axes[2].legend()
+    axes[2].grid(True)
+
     plt.show()
 
 
@@ -312,20 +342,22 @@ def get_data_at_time(time: int) -> list:
     ]
     
     for timestamps, values in zip(time_arrays, data_arrays):  # loop through all input data sources (e.g. heartrate, motion, state)
-        time_arrays = np.array(time_arrays)
+        timestamps = np.array(timestamps)
         valid_timestamps = timestamps[timestamps <= time]
-        
+
         if len(valid_timestamps) == 0:  # JOSH: the case where there are no matching time stamps
-            print("NOOOOOOOOOOOOOOOOOOOOOOOO")  # idk what to do, maybe fix by setting t=15 and resume at 30 afterwards?
-            
+            print("NOOOOOOOOOOOOOOOOOOOOOOOO")  # idk what to do, maybe fix by setting t=15 and resume at 30 afterwards? this should never run
+            print(time)
+            print(timestamps)
+
         else:
             valid_timestamp_index = np.argmax(valid_timestamps)
-            if type(data[valid_timestamp_index]) is tuple:  # motion is a tuple we want to unpack
-                accel_data = np.asarray(data[valid_timestamp_index])  # convert accel data from 
+            if type(values[valid_timestamp_index]) is tuple:  # motion is a tuple we want to unpack
+                accel_data = np.asarray(values[valid_timestamp_index])  # convert accel data from 
                 data = data + accel_data.tolist()
             else:
-                data.append(data[valid_timestamp_index])
-            
+                data.append(values[valid_timestamp_index])
+
     return data  # heart_rate, motion (x, y, z), state
 
 def main():
@@ -333,14 +365,18 @@ def main():
     # parse_data_files(DEFAULT_DATA_ROOT_DIR)
     #print(data_map[DataType.MOTION.name][0].data)
     parse_data_file(DEFAULT_DATA_ROOT_DIR, "4314139")
-    plot_heartrate_data(DEFAULT_PERSON_INDEX)
-    plot_motion_data(DEFAULT_PERSON_INDEX)
+    # plot_heartrate_data(DEFAULT_PERSON_INDEX)
+    # plot_motion_data(DEFAULT_PERSON_INDEX)
 
     # Initialize EKF
     Q_mat = np.array([
-        [0.5, 0, 0],
-        [0, 0.5, 0],
-        [0, 0, 0.5]
+        [0.5, 0, 0, 0, 0, 0, 0],
+        [0, 0.5, 0, 0, 0, 0, 0],
+        [0, 0, 0.5, 0, 0, 0, 0],
+        [0, 0, 0, 0.5, 0, 0, 0],
+        [0, 0, 0, 0, 0.5, 0, 0],
+        [0, 0, 0, 0, 0, 0.5, 0],
+        [0, 0, 0, 0, 0, 0, 0.5],
     ])
 
     # R matrix is diagonal, assumes measurement noises to be independent of one another
@@ -400,37 +436,36 @@ def main():
     
     estimated_states = []  # store them in an array so we can see how it evolves
     ground_truth_states = []
-    # i = 0
-    # z = ... # measurement readings, shape: [NUM_MEASUREMENTS, N]
-    
-    start_time = 15 # or 1 idk
+
+
+    start_time = 930 # or 1 idk
     final_time = 14400 # 4 hours in seconds
-    
+
     curr_time = start_time
     while curr_time < final_time:
         patient_data = get_data_at_time(curr_time)
-        
+
         curr_z = np.array(patient_data[:-1])  # exclude ground truth state
-        curr_z = curr_time.reshape(-1, 1)
-        
+        curr_z = curr_z.reshape(-1, 1)
+
         ekf.predict_update(curr_z, HJacobian, Hx)
         posterior_state = ekf.x
-        
+
         # record states for plotting
         estimated_states.append(posterior_state)
         ground_truth_states.append(patient_data[-1])
-        
-        
+
+
         curr_time += TIME_STEP_SEC
-    #     i+=1
-    
-    # plot_ekf_states(
-    #     np.hstack(estimated_states),
-    #     ground_truth_states,
-    #     start_time,
-    #     final_time
-    # )
-    
+
+
+    plot_ekf_states(
+        np.hstack(estimated_states),
+        ground_truth_states,
+        start_time,
+        final_time
+    )
+
 
 if __name__ == "__main__":
-    main() 
+    main()
