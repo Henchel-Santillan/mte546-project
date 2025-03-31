@@ -32,17 +32,17 @@ def plot_heartrate_data(person_i: int) -> None:
         return robust_model.predict(X)
 
     plt.figure(figsize=(8,6))
-    
+
     # Heart rate
     heartrate_val = data_map[DataType.HEART_RATE.name][person_i].data
     heartrate_time = data_map[DataType.HEART_RATE.name][person_i].time
 
     plt.plot(heartrate_time, heartrate_val, label="Heartrate")
-    
+
     # Robust fit over the heart rate data
     heart_rate_pred = gen_sensor_model_hr(person_i)
     plt.plot(heartrate_time, heart_rate_pred, label="Heartrate Fit (Robust LS)")
-    
+
     plt.title("Heart Rate vs. Time")
     plt.xlabel("Time [sec]")
     plt.ylabel("Heart Rate [bpm]")
@@ -127,8 +127,9 @@ def plot_ekf_states(states: np.array, ground_truth_states: list, start_time: flo
     fig, axes = plt.subplots(3, 1, figsize=(16,8))
 
     # EKF outputs
-    for state_i in labels:
-        axes[0].plot(time_range[: len(time_range)-1], states[state_i, :], label=labels[state_i])
+    for state_i in range(len(labels)):
+        if labels[state_i] != "Wake Score":
+            axes[0].plot(time_range[: len(time_range)-1], states[state_i, :], label=labels[state_i])
 
     axes[0].set_title("Predicted States")
     axes[0].set_xlabel("Time [s]")
@@ -163,4 +164,5 @@ def plot_ekf_states(states: np.array, ground_truth_states: list, start_time: flo
     axes[2].legend()
     axes[2].grid(True)
 
+    plt.tight_layout()
     plt.show()

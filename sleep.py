@@ -59,8 +59,8 @@ def get_measurement_variances(person_i: int):
     return (var_hr, var_imu_x, var_imu_y, var_imu_z)
 
 ########################### EKF FUNCTIONS ##################################
-hr_weights = [1, 0.7, 0.5, 1.3]
-base_imu_weights = [1.6, 0.8, 0.1, 1.3]
+hr_weights = [1, 0.7, 0.5, 1.3, 0, 0 ,0]
+base_imu_weights = [1.6, 0.8, 0.1, 1.3, 0, 0, 0]   # FIX: ADDED 0's HERE
 
 def HJacobian(x, time, *args):
     """
@@ -87,7 +87,8 @@ def Hx(x, time, *args):
 
     # Columns: Wake, Core, Deep, REM, use the sleep probabilities as weights
     # Time-varying linear weighted sum approach, may need tuning or a different approach
-    sleep_probabilities = np.array([x[0], x[1], x[3], x[2]])
+    x = x.reshape(1, -1)
+    sleep_probabilities = np.array([x[0, 0], x[0, 1], x[0, 3], x[0, 2], 1, 1, 1])  # FIX: ADDED 1's HERE
 
     z1 = np.dot(hr_weights * hr_sensor_model_ekf(time), sleep_probabilities)
     z2 = np.dot(base_imu_weights * imu_sensor_model_ekf(time, ImuAxis.X_AXIS), sleep_probabilities)
@@ -104,13 +105,13 @@ def get_data_at_time(time: int):
         data_map[DataType.MOTION.name][DEFAULT_PERSON_INDEX].time,
         data_map[DataType.STATE.name][DEFAULT_PERSON_INDEX].time
     ]
-    
+
     data_arrays = [
         data_map[DataType.HEART_RATE.name][DEFAULT_PERSON_INDEX].data,
         data_map[DataType.MOTION.name][DEFAULT_PERSON_INDEX].data,
         data_map[DataType.STATE.name][DEFAULT_PERSON_INDEX].data
     ]
-    
+
     for timestamps, values in zip(time_arrays, data_arrays):  # loop through all input data sources (e.g. heartrate, motion, state)
         timestamps = np.array(timestamps)
         valid_timestamps = timestamps[timestamps <= time]
@@ -134,7 +135,7 @@ def main():
     # Extract the data from the .txt files
     # parse_data_files(DEFAULT_DATA_ROOT_DIR)
     #print(data_map[DataType.MOTION.name][0].data)
-    # parse_data_file(DEFAULT_DATA_ROOT_DIR, "4314139")
+    parse_data_file(DEFAULT_DATA_ROOT_DIR, "4314139")
     # plot_heartrate_data(DEFAULT_PERSON_INDEX)
     # plot_motion_data(DEFAULT_PERSON_INDEX)
 
@@ -154,19 +155,20 @@ def main():
     # R matrix is diagonal, assumes measurement noises to be independent of one another
     # The diagonals are populated by the variances of each measurement
     var_hr, var_imu_x, var_imu_y, var_imu_z = get_measurement_variances(DEFAULT_PERSON_INDEX)
+    global R_mat
     R_mat = np.array([
         [var_hr, 0, 0, 0],
         [0, var_imu_x, 0, 0],
         [0, 0, var_imu_y, 0],
         [0, 0, 0, var_imu_z],
     ])
-    
+
     ekf = EKF(NUM_STATES, NUM_MEASUREMENTS)
-    
-    alpha_rem = 5  # rate at which REM increases 'wake score'
+
+    alpha_rem = 1.2  # rate at which REM increases 'wake score'
     beta_core = 3  # rate at which core sleep decreases 'wake score'
-    gamma = 0.1  # decay the weight of previous values on current computation (smoothing factor)
-    
+    gamma = 0.5  # decay the weight of previous values on current computation (smoothing factor)
+
     A = np.array([
         [0.85, 0.10, 0.05, 0.00, 0, 0, 0],
         [0.10, 0.75, 0.10, 0.05, 0, 0, 0],
@@ -176,13 +178,13 @@ def main():
         [0, 0, gamma, 0, 0, 1 - gamma, 0],  # REM Duration Eq
         [0, gamma, 0, 0, 0, 0, 1 - gamma]   # Core Duration Eq
     ])  # 7x7
-    
+
     ekf.F = A
     ekf.P = Q_mat
     ekf.R = R_mat
     ekf.Q = Q_mat
     ekf.H = None
-    
+
     ekf.x = np.array([
         1.0,  # P(awake)
         0,  # P(core)
@@ -192,10 +194,10 @@ def main():
         0,  # time in rem (keep track of time inside because our states are probabilisitic, meaning we actually don't know if the person has exited a state to reset it manually ourselves)
         0   # time in core
     ])  # 1x7
-    
+
     # # ekf.x = np.array([0, 1, 0, 0, 0]) # initial state (start awake): [wake_score, initial_state, x_accel, y_accel, z_accel]
     # ekf.x = np.array([0, 1.0, 0, 0, 0]) # initial state (start awake): [wake_score, awake_state, core_sleep, rem_sleep, deep_sleep]
-    
+
     # ekf.P = np.array([
     #     [0.85, 0.15, 0, 0],
     #     [0.1, 0.6, 0.25, 0.05],
@@ -203,14 +205,15 @@ def main():
     #     [0, 0.7, 0.1, 0.2]
     #     ]) # model: each row represents the probability of transitioning form one state to another
     # ekf.H = None
-    
+
     # # Main Loop
-    
+
     estimated_states = []  # store them in an array so we can see how it evolves
     ground_truth_states = []
 
     start_time = 930 # or 1 idk
     final_time = 14400 # 4 hours in seconds
+    # final_time = 1290 # 4 hours in seconds
 
     curr_time = start_time
     while curr_time < final_time:
@@ -238,3 +241,102 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+
+##### EKF.py
+# def predict_update(self, z, HJacobian, Hx, args=(), hx_args=(), u=0):
+#         """ Performs the predict/update innovation of the extended Kalman
+#         filter.
+
+#         Parameters
+#         ----------
+
+#         z : np.array
+#             measurement for this step.
+#             If `None`, only predict step is perfomed.
+
+#         HJacobian : function
+#            function which computes the Jacobian of the H matrix (measurement
+#            function). Takes state variable (self.x) as input, along with the
+#            optional arguments in args, and returns H.
+
+#         Hx : function
+#             function which takes as input the state variable (self.x) along
+#             with the optional arguments in hx_args, and returns the measurement
+#             that would correspond to that state.
+
+#         args : tuple, optional, default (,)
+#             arguments to be passed into HJacobian after the required state
+#             variable.
+
+#         hx_args : tuple, optional, default (,)
+#             arguments to be passed into Hx after the required state
+#             variable.
+
+#         u : np.array or scalar
+#             optional control vector input to the filter.
+#         """
+#         #pylint: disable=too-many-locals
+
+#         if not isinstance(args, tuple):
+#             args = (args,)
+
+#         if not isinstance(hx_args, tuple):
+#             hx_args = (hx_args,)
+
+#         if np.isscalar(z) and self.dim_z == 1:
+#             z = np.asarray([z], float)
+#         F = self.F
+#         B = self.B
+#         P = self.P
+#         Q = self.Q
+#         R = self.R
+#         x = self.x
+
+#         H = HJacobian(x, *args)
+
+#         # predict step
+#         x = dot(F, x) + dot(B, u)
+#         P = dot(F, P).dot(F.T) + Q
+
+#         # save prior
+#         self.x_prior = np.copy(self.x)
+#         self.P_prior = np.copy(self.P)
+
+#         # update step
+#         PHT = dot(P, H.T)
+
+#         # print(f"PHT: {PHT.shape}")
+#         self.S = dot(H, PHT) + R
+#         self.SI = linalg.inv(self.S)
+#         self.K = dot(PHT, self.SI)
+#         # print(f"K: {self.K.shape}")
+
+#         self.y = z - Hx(x, *hx_args)
+#         # print(f"z_val: {z}")
+
+#         # print(f"z: {z.shape}")
+#         # print(f"Hx: {Hx(x, *hx_args).shape}")
+
+#         # print(f"y: {self.y.shape}")
+#         # print(f"Hx_val: {Hx(x, *hx_args)}")
+#         # print(f"y_val: {self.y}")
+#         # print(f"K_dot_y: {dot(self.K, self.y).shape}")
+#         # print(f"x: {x.shape}")
+
+
+#         self.x = x.reshape(3,1) + dot(self.K, self.y)  # HEEEREREERERE
+
+#         I_KH = self._I - dot(self.K, H)
+#         self.P = dot(I_KH, P).dot(I_KH.T) + dot(self.K, R).dot(self.K.T)
+
+#         # save measurement and posterior state
+#         self.z = deepcopy(z)
+#         self.x_post = self.x.copy()
+#         self.P_post = self.P.copy()
+
+#         # set to None to force recompute
+#         self._log_likelihood = None
+#         self._likelihood = None
+#         self._mahalanobis = None
