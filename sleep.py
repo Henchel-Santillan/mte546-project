@@ -1,7 +1,6 @@
 from filterpy.kalman import ExtendedKalmanFilter as EKF
 
 from extract import *
-from model import *
 from plot import *
 
 import numpy as np
@@ -16,7 +15,6 @@ NUM_STATES = 7 # awake, core sleep = N1/N2, REM, Deep sleep = N3
 NUM_MEASUREMENTS = 3  # HRV, HR, motion (duration)
 DEFAULT_PERSON_INDEX = 0
 
-sleep_state_prob_mat = []
 R_mat = []
 
 ############################## SENSOR MODELS and NOISE #################################
@@ -60,7 +58,7 @@ def get_measurement_variances(person_i: int):
 
 ########################### EKF FUNCTIONS ##################################
 hr_weights = [1, 0.7, 0.5, 1.3, 0, 0 ,0]
-base_imu_weights = [1.6, 0.8, 0.1, 1.3, 0, 0, 0]   # FIX: ADDED 0's HERE
+base_imu_weights = [1.6, 0.8, 0.1, 1.3, 0, 0, 0]
 
 def HJacobian(x, time, *args):
     """
@@ -88,7 +86,7 @@ def Hx(x, time, *args):
     # Columns: Wake, Core, Deep, REM, use the sleep probabilities as weights
     # Time-varying linear weighted sum approach, may need tuning or a different approach
     x = x.reshape(1, -1)
-    sleep_probabilities = np.array([x[0, 0], x[0, 1], x[0, 3], x[0, 2], 1, 1, 1])  # FIX: ADDED 1's HERE
+    sleep_probabilities = np.array([x[0, 0], x[0, 1], x[0, 3], x[0, 2], 1, 1, 1])
 
     z1 = np.dot(hr_weights * hr_sensor_model_ekf(time), sleep_probabilities)
     z2 = np.dot(base_imu_weights * imu_sensor_model_ekf(time, ImuAxis.X_AXIS), sleep_probabilities)
@@ -131,6 +129,13 @@ def get_data_at_time(time: int):
 
     return data  # heart_rate, motion (x, y, z), state
 
+def normalize_sleep_probabilities(x):
+    sleep_states = x[:4]
+    sleep_states /= np.sum(sleep_states)
+    print(sleep_states)
+    x[:4] = sleep_states
+    return x
+
 def main():
     # Extract the data from the .txt files
     # parse_data_files(DEFAULT_DATA_ROOT_DIR)
@@ -139,14 +144,12 @@ def main():
     # plot_heartrate_data(DEFAULT_PERSON_INDEX)
     # plot_motion_data(DEFAULT_PERSON_INDEX)
 
-    sleep_state_prob_mat = compute_sleep_probabilities()
-
     # Initialize EKF
     Q_mat = np.array([
-        [0.5, 0, 0, 0, 0, 0, 0],
-        [0, 0.5, 0, 0, 0, 0, 0],
+        [0.1, 0, 0, 0, 0, 0, 0],
+        [0, 0.1, 0, 0, 0, 0, 0],
         [0, 0, 0.5, 0, 0, 0, 0],
-        [0, 0, 0, 0.5, 0, 0, 0],
+        [0, 0, 0, 0.1, 0, 0, 0],
         [0, 0, 0, 0, 0.5, 0, 0],
         [0, 0, 0, 0, 0, 0.5, 0],
         [0, 0, 0, 0, 0, 0, 0.5],
@@ -169,11 +172,31 @@ def main():
     beta_core = 3  # rate at which core sleep decreases 'wake score'
     gamma = 0.5  # decay the weight of previous values on current computation (smoothing factor)
 
+    # A = np.array([
+    #     [0.85, 0.10, 0.05, 0.00, 0, 0, 0],
+    #     [0.10, 0.75, 0.10, 0.05, 0, 0, 0],
+    #     [0.00, 0.20, 0.75, 0.05, 0, 0, 0],
+    #     [0.00, 0.10, 0.10, 0.80, 0, 0, 0],
+    #     [0, 0, alpha_rem, 0, 1, 0, -beta_core],  # Wake Score Eq
+    #     [0, 0, gamma, 0, 0, 1 - gamma, 0],  # REM Duration Eq
+    #     [0, gamma, 0, 0, 0, 0, 1 - gamma]   # Core Duration Eq
+    # ])  # 7x7
+
+    # A = np.array([
+    #     [0.6505, 0.3495, 0, 0, 0, 0, 0],
+    #     [0.0518, 0.9314, 0.0067, 0.01, 0, 0, 0],
+    #     [0.0312, 0.0312, 0, 0.9375, 0, 0, 0],
+    #     [0.0123, 0.0123, 0.9755, 0, 0, 0, 0],
+    #     [0, 0, alpha_rem, 0, 1, 0, -beta_core],  # Wake Score Eq
+    #     [0, 0, gamma, 0, 0, 1 - gamma, 0],  # REM Duration Eq
+    #     [0, gamma, 0, 0, 0, 0, 1 - gamma]   # Core Duration Eq
+    # ])  # 7x7
+
     A = np.array([
-        [0.85, 0.10, 0.05, 0.00, 0, 0, 0],
-        [0.10, 0.75, 0.10, 0.05, 0, 0, 0],
-        [0.00, 0.20, 0.75, 0.05, 0, 0, 0],
-        [0.00, 0.10, 0.10, 0.80, 0, 0, 0],
+        [0.6505, 0.3495, 0, 0, 0, 0, 0],
+        [0.1018, 0.7514, 0.1367, 0.01, 0, 0, 0],
+        [0.0312, 0.3012, 0.03, 0.6375, 0, 0, 0],
+        [0.0123, 0.3123, 0.4755, 0.2, 0, 0, 0],
         [0, 0, alpha_rem, 0, 1, 0, -beta_core],  # Wake Score Eq
         [0, 0, gamma, 0, 0, 1 - gamma, 0],  # REM Duration Eq
         [0, gamma, 0, 0, 0, 0, 1 - gamma]   # Core Duration Eq
@@ -211,9 +234,8 @@ def main():
     estimated_states = []  # store them in an array so we can see how it evolves
     ground_truth_states = []
 
-    start_time = 930 # or 1 idk
+    start_time = 930
     final_time = 14400 # 4 hours in seconds
-    # final_time = 1290 # 4 hours in seconds
 
     curr_time = start_time
     while curr_time < final_time:
@@ -326,7 +348,7 @@ if __name__ == "__main__":
 #         # print(f"x: {x.shape}")
 
 
-#         self.x = x.reshape(3,1) + dot(self.K, self.y)  # HEEEREREERERE
+#         self.x = x.reshape(-1,1) + dot(self.K, self.y)  # HEEEREREERERE
 
 #         I_KH = self._I - dot(self.K, H)
 #         self.P = dot(I_KH, P).dot(I_KH.T) + dot(self.K, R).dot(self.K.T)

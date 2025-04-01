@@ -55,7 +55,7 @@ def extract_csv_data(file, person_id, data_type: DataType) -> DataContainer:
                         container.data.append(int(line[1]))
                     case DataType.STATE:
                         ground_truth = int(line[1])
-                        if ground_truth > 0:
+                        if ground_truth >= 0:
                             # Data uses -1 to represent unknown state
                             container.time.append(float(line[0]))
                             container.data.append(ground_truth)

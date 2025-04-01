@@ -1,4 +1,4 @@
-from extract import DataType, DEFAULT_DATA_ROOT_DIR, parse_data_files, data_map
+from extract import DataType, DEFAULT_DATA_ROOT_DIR, parse_data_files, parse_data_file, data_map
 from plot import TIME_STEP_SEC
 
 from typing import List
@@ -88,28 +88,78 @@ def find_best_time(prob_mat, target_probs: List[float], sleep_states: List[int])
     # Corresponds to the index with the minimum total difference
     return np.argmin(total_diffs) * TIME_STEP_SEC
 
-def main():
-    """
-    Used to test the cumulative distribution function and the
-    function to find the time index."
-    """
-    test_data = [
-        [1, 2, -1, 3, 5],  # List 1
-        [0, 2, 3, 4, 0],  # List 2
-        [1, 1, 2, 2, 3],  # List 3
+def pretty_print(arr, decimals=4):
+    """ Pretty prints a 2D NumPy array with aligned columns. """
+    formatted_rows = [
+        " | ".join(f"{val:.{decimals}f}" for val in row)
+        for row in arr
     ]
+    print("\n".join(formatted_rows))
 
-    #prob_mat = compute_sleep_probabilities(test_data=test_data)
-    prob_mat = compute_sleep_probabilities()
+def find_state_mat_probabilities(person_id=None):
+    """
+    Finds the values to use for the sleep stage probabilities
+    in the state transition matrix
+    """
+    if person_id is None:
+        parse_data_files(DEFAULT_DATA_ROOT_DIR, key=DataType.STATE)
+    else:
+        parse_data_file(DEFAULT_DATA_ROOT_DIR, person_id, type_key=DataType.STATE)
+    
+    data = [c.data for c in data_map[DataType.STATE.name]]
 
-    # Target probs have to add to 1
-    # Index 4 must always be 0 - still need to pad
-    # represents: wake, core, deep, <invalid>, rem
-    target_probs = [0.2, 0.2, 0.2, 0, 0.2]
-    sleep_states = [i for i in range(5)]
+    # data = [[0, 1, 2, 3, 5],
+    #         [3, 2, 1, 5, 0],
+    #         [5, 3, 0, 2, 1]]
 
-    index = find_best_time(prob_mat, target_probs, sleep_states)
-    print(index)
+    # Keeps track of frequency of transitions
+    freq_mat = np.zeros((6, 6))
+
+    for patient_data in data:
+        filtered_data = list(filter(lambda x: x != -1 and x != 4, patient_data))
+        current_state = filtered_data[0]
+        for i in range(1, len(filtered_data)):
+            next_state = filtered_data[i]
+            freq_mat[current_state, next_state] += 1
+            current_state = next_state
+
+    # State transitions are unique, so there will be no multiple counting
+    freq_mat[1, :] += freq_mat[2, :]
+    freq_mat = np.delete(freq_mat, 2, axis=0)  # Remove row 2
+
+    # Merge columns: Sum column 1 and column 2 into column 1
+    freq_mat[:, 1] += freq_mat[:, 2]
+    freq_mat = np.delete(freq_mat, 2, axis=1)  # Remove column 2
+
+    # Normalize along rows
+    row_sums = np.sum(freq_mat, axis=1, keepdims=True)
+    prob_mat = np.divide(freq_mat, row_sums, where=row_sums != 0)
+
+    # pretty_print(freq_mat)
+    #print(np.sum(prob_mat, axis=1))
+    pretty_print(prob_mat)
+
+def main():
+    # test_data = [
+    #     [1, 2, -1, 3, 5],  # List 1
+    #     [0, 2, 3, 4, 0],  # List 2
+    #     [1, 1, 2, 2, 3],  # List 3
+    # ]
+
+    # #prob_mat = compute_sleep_probabilities(test_data=test_data)
+    # prob_mat = compute_sleep_probabilities()
+
+    # # Target probs have to add to 1
+    # # Index 4 must always be 0 - still need to pad
+    # # represents: wake, core, deep, <invalid>, rem
+    # target_probs = [0.2, 0.2, 0.2, 0, 0.2]
+    # sleep_states = [i for i in range(5)]
+
+    # index = find_best_time(prob_mat, target_probs, sleep_states)
+    # print(index)
+
+    find_state_mat_probabilities("4314139")
+    #find_state_mat_probabilities()
 
 if __name__ == "__main__":
     main()
