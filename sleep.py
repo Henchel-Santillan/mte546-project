@@ -17,6 +17,7 @@ DEFAULT_PERSON_INDEX = 0
 
 R_mat = []
 
+
 ############################## SENSOR MODELS and NOISE #################################
 # Assume zero mean Gaussian for noise
 def __gaussian_noise(mean=0, std_dev=0, num_samples=1):
@@ -56,9 +57,10 @@ def get_measurement_variances(person_i: int):
     var_imu_z = np.var(np.array([val[2] for val in imu_data]))
     return (var_hr, var_imu_x, var_imu_y, var_imu_z)
 
+
 ########################### EKF FUNCTIONS ##################################
-hr_weights = [1, 0.7, 0.5, 1.3, 0, 0 ,0]
-base_imu_weights = [1.6, 0.8, 0.1, 1.3, 0, 0, 0]
+hr_weights = [70, 65, 75, 60, 0, 0, 0]
+base_imu_weights = [1, 1, 1, 1, 0, 0, 0]
 
 def HJacobian(x, time, *args):
     """
@@ -67,31 +69,28 @@ def HJacobian(x, time, *args):
     Yields m x n matrix, m = number of measurements, n = number of states
     """
     hr = hr_weights * hr_sensor_model_ekf(time)
-    imu_x = base_imu_weights * imu_sensor_model_ekf(time, ImuAxis.X_AXIS)
-    imu_y = base_imu_weights * imu_sensor_model_ekf(time, ImuAxis.Y_AXIS)
-    imu_z = base_imu_weights* imu_sensor_model_ekf(time, ImuAxis.Z_AXIS)
+
+    # We take the absolute value of the measurement output,
+    # since we care more about activity intensity (rather than direction)
+    imu_x = base_imu_weights * np.abs(imu_sensor_model_ekf(time, ImuAxis.X_AXIS))
+    imu_y = base_imu_weights * np.abs(imu_sensor_model_ekf(time, ImuAxis.Y_AXIS))
+    imu_z = base_imu_weights* np.abs(imu_sensor_model_ekf(time, ImuAxis.Z_AXIS))
+
     return np.array([hr, imu_x, imu_y, imu_z])
 
 def Hx(x, time, *args):
     """
     Given state vector x, return the corresponding measurement for this step
     """
-    # stage_nums = [i for i in range(5)]
-
-    # # Extract the sleep stage probabilities from the state vector
-    # # Pad 3rd index with "0", since "4" doesn't correspond to any sleep state
-    # sleep_probabilities = [x[0], x[1], x[3], 0, x[2]]
-    # time = find_best_time(sleep_state_prob_mat, sleep_probabilities, stage_nums)
-
     # Columns: Wake, Core, Deep, REM, use the sleep probabilities as weights
     # Time-varying linear weighted sum approach, may need tuning or a different approach
     x = x.reshape(1, -1)
     sleep_probabilities = np.array([x[0, 0], x[0, 1], x[0, 3], x[0, 2], 1, 1, 1])
 
     z1 = np.dot(hr_weights * hr_sensor_model_ekf(time), sleep_probabilities)
-    z2 = np.dot(base_imu_weights * imu_sensor_model_ekf(time, ImuAxis.X_AXIS), sleep_probabilities)
-    z3 = np.dot(base_imu_weights * imu_sensor_model_ekf(time, ImuAxis.Y_AXIS), sleep_probabilities)
-    z4 = np.dot(base_imu_weights * imu_sensor_model_ekf(time, ImuAxis.Z_AXIS), sleep_probabilities)
+    z2 = np.dot(base_imu_weights * np.abs(imu_sensor_model_ekf(time, ImuAxis.X_AXIS)), sleep_probabilities)
+    z3 = np.dot(base_imu_weights * np.abs(imu_sensor_model_ekf(time, ImuAxis.Y_AXIS)), sleep_probabilities)
+    z4 = np.dot(base_imu_weights * np.abs(imu_sensor_model_ekf(time, ImuAxis.Z_AXIS)), sleep_probabilities)
 
     # Return the vector of expected measurements
     return np.array([z1, z2, z3, z4]).reshape(4, 1)
@@ -129,13 +128,6 @@ def get_data_at_time(time: int):
 
     return data  # heart_rate, motion (x, y, z), state
 
-def normalize_sleep_probabilities(x):
-    sleep_states = x[:4]
-    sleep_states /= np.sum(sleep_states)
-    print(sleep_states)
-    x[:4] = sleep_states
-    return x
-
 def main():
     # Extract the data from the .txt files
     # parse_data_files(DEFAULT_DATA_ROOT_DIR)
@@ -146,10 +138,10 @@ def main():
 
     # Initialize EKF
     Q_mat = np.array([
-        [0.1, 0, 0, 0, 0, 0, 0],
-        [0, 0.1, 0, 0, 0, 0, 0],
-        [0, 0, 0.5, 0, 0, 0, 0],
-        [0, 0, 0, 0.1, 0, 0, 0],
+        [0.5, 0, 0, 0, 0, 0, 0], # Awake
+        [0, 0.4, 0, 0, 0, 0, 0], # Core
+        [0, 0, 0.4, 0, 0, 0, 0], # REM
+        [0, 0, 0, 0.4, 0, 0, 0], # Deep
         [0, 0, 0, 0, 0.5, 0, 0],
         [0, 0, 0, 0, 0, 0.5, 0],
         [0, 0, 0, 0, 0, 0, 0.5],
@@ -164,7 +156,7 @@ def main():
         [0, var_imu_x, 0, 0],
         [0, 0, var_imu_y, 0],
         [0, 0, 0, var_imu_z],
-    ])
+    ]) * 0.1
 
     ekf = EKF(NUM_STATES, NUM_MEASUREMENTS)
 
@@ -172,31 +164,11 @@ def main():
     beta_core = 3  # rate at which core sleep decreases 'wake score'
     gamma = 0.5  # decay the weight of previous values on current computation (smoothing factor)
 
-    # A = np.array([
-    #     [0.85, 0.10, 0.05, 0.00, 0, 0, 0],
-    #     [0.10, 0.75, 0.10, 0.05, 0, 0, 0],
-    #     [0.00, 0.20, 0.75, 0.05, 0, 0, 0],
-    #     [0.00, 0.10, 0.10, 0.80, 0, 0, 0],
-    #     [0, 0, alpha_rem, 0, 1, 0, -beta_core],  # Wake Score Eq
-    #     [0, 0, gamma, 0, 0, 1 - gamma, 0],  # REM Duration Eq
-    #     [0, gamma, 0, 0, 0, 0, 1 - gamma]   # Core Duration Eq
-    # ])  # 7x7
-
-    # A = np.array([
-    #     [0.6505, 0.3495, 0, 0, 0, 0, 0],
-    #     [0.0518, 0.9314, 0.0067, 0.01, 0, 0, 0],
-    #     [0.0312, 0.0312, 0, 0.9375, 0, 0, 0],
-    #     [0.0123, 0.0123, 0.9755, 0, 0, 0, 0],
-    #     [0, 0, alpha_rem, 0, 1, 0, -beta_core],  # Wake Score Eq
-    #     [0, 0, gamma, 0, 0, 1 - gamma, 0],  # REM Duration Eq
-    #     [0, gamma, 0, 0, 0, 0, 1 - gamma]   # Core Duration Eq
-    # ])  # 7x7
-
     A = np.array([
-        [0.6505, 0.3495, 0, 0, 0, 0, 0],
-        [0.1018, 0.7514, 0.1367, 0.01, 0, 0, 0],
-        [0.0312, 0.3012, 0.03, 0.6375, 0, 0, 0],
-        [0.0123, 0.3123, 0.4755, 0.2, 0, 0, 0],
+        [0.3095, 0.6905, 0, 0, 0, 0, 0], # Awake
+        [0.1518, 0.4514, 0.3867, 0.01, 0, 0, 0], # Core
+        [0.0312, 0.2712, 0.260, 0.4375, 0, 0, 0], # REM
+        [0.0123, 0.3123, 0.4755, 0.2, 0, 0, 0], # Deep
         [0, 0, alpha_rem, 0, 1, 0, -beta_core],  # Wake Score Eq
         [0, 0, gamma, 0, 0, 1 - gamma, 0],  # REM Duration Eq
         [0, gamma, 0, 0, 0, 0, 1 - gamma]   # Core Duration Eq
@@ -209,7 +181,7 @@ def main():
     ekf.H = None
 
     ekf.x = np.array([
-        1.0,  # P(awake)
+        1,  # P(awake)
         0,  # P(core)
         0,  # P(rem)
         0,  # P(deep)
@@ -218,19 +190,7 @@ def main():
         0   # time in core
     ])  # 1x7
 
-    # # ekf.x = np.array([0, 1, 0, 0, 0]) # initial state (start awake): [wake_score, initial_state, x_accel, y_accel, z_accel]
-    # ekf.x = np.array([0, 1.0, 0, 0, 0]) # initial state (start awake): [wake_score, awake_state, core_sleep, rem_sleep, deep_sleep]
-
-    # ekf.P = np.array([
-    #     [0.85, 0.15, 0, 0],
-    #     [0.1, 0.6, 0.25, 0.05],
-    #     [0.05, 0.5, 0.4, 0.05],
-    #     [0, 0.7, 0.1, 0.2]
-    #     ]) # model: each row represents the probability of transitioning form one state to another
-    # ekf.H = None
-
     # # Main Loop
-
     estimated_states = []  # store them in an array so we can see how it evolves
     ground_truth_states = []
 
@@ -244,13 +204,12 @@ def main():
         curr_z = np.array(patient_data[:-1])  # exclude ground truth state
         curr_z = curr_z.reshape(-1, 1)
 
-        ekf.predict_update(curr_z, HJacobian, Hx, args=(curr_time), hx_args=(curr_time))
+        ekf.predict_update(curr_z, HJacobian, Hx, args=(curr_time, start_time), hx_args=(curr_time, start_time))
         posterior_state = ekf.x
 
         # record states for plotting
         estimated_states.append(posterior_state)
         ground_truth_states.append(patient_data[-1])
-
 
         curr_time += TIME_STEP_SEC
 

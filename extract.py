@@ -100,4 +100,4 @@ def parse_data_files(data_root_dir: str, person_ids: List[str] = None, key=None)
                 person_ids.append(split_name[0])
             
     for person_id in person_ids:
-        parse_data_file(data_root_dir, person_id, key)
+        parse_data_file(data_root_dir, person_id=person_id, type_key=key)

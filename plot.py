@@ -127,9 +127,15 @@ def plot_ekf_states(states: np.array, ground_truth_states: list, start_time: flo
     fig, axes = plt.subplots(3, 1, figsize=(16,8))
 
     # EKF outputs
-    for state_i in range(len(labels)):
-        if labels[state_i] != "Wake Score":
-            axes[0].plot(time_range[: len(time_range)-1], states[state_i, :], label=labels[state_i])
+    # for state_i in range(len(labels)):
+    #     if labels[state_i] != "Wake Score":
+    #         axes[0].plot(time_range[: len(time_range)-1], states[state_i, :], label=labels[state_i])
+
+    for state_i in range(0, 3 + 1):
+        axes[0].plot(time_range[: len(time_range)-1], - 1 * states[state_i, :], label=labels[state_i])
+
+    for state_i in range(5, len(labels)):
+        axes[0].plot(time_range[: len(time_range)-1], states[state_i, :], label=labels[state_i])
 
     axes[0].set_title("Predicted States")
     axes[0].set_xlabel("Time [s]")
@@ -161,7 +167,6 @@ def plot_ekf_states(states: np.array, ground_truth_states: list, start_time: flo
     axes[2].set_title("Sleep Score")
     axes[2].set_xlabel("Time [s]")
     axes[2].set_ylabel("Sleep Score")
-    axes[2].legend()
     axes[2].grid(True)
 
     plt.tight_layout()
