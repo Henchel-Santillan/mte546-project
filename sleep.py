@@ -5,6 +5,8 @@ from plot import *
 
 import numpy as np
 
+from fuzzy_traffic import FuzzyAlarm, get_traffic_duration_now
+
 # from labels:
 # 0: awake
 # 1: n1
@@ -14,6 +16,12 @@ import numpy as np
 NUM_STATES = 7 # awake, core sleep = N1/N2, REM, Deep sleep = N3
 NUM_MEASUREMENTS = 3  # HRV, HR, motion (duration)
 DEFAULT_PERSON_INDEX = 0
+
+
+HOME_ADDRESS_GPS = (43.4288496, -80.4105815)  # 208 Grand River Blvd, Kitchener, ON N2A 3G6
+DESTINATION_GPS = (43.4692846, -80.5401371) # W Store, 200 University Avenue West, Waterloo, ON N2L 3G1
+
+
 
 R_mat = []
 
@@ -191,6 +199,9 @@ def main():
     ])  # 1x7
 
     # # Main Loop
+    fuzzy_alarm = FuzzyAlarm()
+    fuzzy_vals = []
+
     estimated_states = []  # store them in an array so we can see how it evolves
     ground_truth_states = []
 
@@ -199,6 +210,7 @@ def main():
 
     curr_time = start_time
     while curr_time < final_time:
+        # === Sleep states ===
         patient_data = get_data_at_time(curr_time)
 
         curr_z = np.array(patient_data[:-1])  # exclude ground truth state
@@ -211,11 +223,38 @@ def main():
         estimated_states.append(posterior_state)
         ground_truth_states.append(patient_data[-1])
 
+
+        # === Alarm (Fuzzy) ===
+        travel_time = get_traffic_duration_now(HOME_ADDRESS_GPS, DESTINATION_GPS) # in seconds
+
+        curr_wake_score = posterior_state[4, 0]
+        alarm_pressure = fuzzy_alarm.compute_alarm_pressure(wake_score=curr_wake_score, traffic_delay=travel_time)
+        curr_trigger_alarm = False
+        if alarm_pressure >= 70:
+            curr_trigger_alarm = True
+
+        curr_alarm_vals = np.array([
+            [alarm_pressure],
+            [curr_trigger_alarm]
+        ])
+
+        fuzzy_vals.append(curr_alarm_vals)
+
+
+
         curr_time += TIME_STEP_SEC
 
-    plot_ekf_states(
+    # plot_ekf_states(
+    #     np.hstack(estimated_states),
+    #     ground_truth_states,
+    #     start_time,
+    #     final_time
+    # )
+
+    plot_ekf_states_and_alarm(
         np.hstack(estimated_states),
         ground_truth_states,
+        np.hstack(fuzzy_vals),
         start_time,
         final_time
     )

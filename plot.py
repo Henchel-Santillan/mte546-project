@@ -171,3 +171,83 @@ def plot_ekf_states(states: np.array, ground_truth_states: list, start_time: flo
 
     plt.tight_layout()
     plt.show()
+
+
+def plot_ekf_states_and_alarm(states: np.array, ground_truth_states: list, alarms_vals: np.array, start_time: float, final_time: float):
+    labels = [
+        "P(awake)",
+        "P(core)",
+        "P(rem)",
+        "P(deep)",
+        "Wake Score",
+        "T_rem",
+        "T_core"
+    ]
+    time_range = np.arange(start_time, final_time + TIME_STEP_SEC, TIME_STEP_SEC)
+
+    fig, axes = plt.subplots(4, 1, figsize=(16,8))
+
+    # EKF outputs
+    # for state_i in range(len(labels)):
+    #     if labels[state_i] != "Wake Score":
+    #         axes[0].plot(time_range[: len(time_range)-1], states[state_i, :], label=labels[state_i])
+
+    for state_i in range(0, 3 + 1):
+        axes[0].plot(time_range[: len(time_range)-1], - 1 * states[state_i, :], label=labels[state_i])
+
+    for state_i in range(5, len(labels)):
+        axes[0].plot(time_range[: len(time_range)-1], states[state_i, :], label=labels[state_i])
+
+    axes[0].set_title("Predicted States")
+    axes[0].set_xlabel("Time [s]")
+    axes[0].set_ylabel("State")
+    axes[0].legend()
+    axes[0].grid(True)
+
+    # Ground truth state vs predicted state (high %)
+    transformed_groundtruth_states = np.where(ground_truth_states == 2, 1, ground_truth_states)
+    transformed_groundtruth_states = np.where(transformed_groundtruth_states == 3, 2, transformed_groundtruth_states)
+    transformed_groundtruth_states = np.where(transformed_groundtruth_states == 5, 3, transformed_groundtruth_states)
+    axes[1].plot(time_range[: len(time_range)-1], transformed_groundtruth_states, label="Ground Truth sleep state")  # convert labelled y-axis to values that are easier to comprehend
+
+    indices_of_highest_probability_states = np.argmax(states[:4, :], axis=0)  # 1xN (0: awake, 1: core, 2: deep, 3: rem)
+    axes[1].plot(time_range[: len(time_range)-1], indices_of_highest_probability_states, label="Predicted Sleep States")
+
+    state_labels = {0: "Awake", 1: "Core", 2: "Deep", 3: "REM"}  # change y-axis labels for clarity
+    axes[1].set_yticks(list(state_labels.keys()))
+    axes[1].set_yticklabels(list(state_labels.values()))
+
+    axes[1].set_title("Final Predicted Sleep State")
+    axes[1].set_xlabel("Time [s]")
+    axes[1].set_ylabel("State")
+    axes[1].legend()
+    axes[1].grid(True)
+
+
+    # Sleep score
+    axes[2].plot(time_range[: len(time_range)-1], states[4, :])
+    axes[2].set_title("Sleep Score")
+    axes[2].set_xlabel("Time [s]")
+    axes[2].set_ylabel("Sleep Score")
+    axes[2].grid(True)
+
+
+    # Alarm Pressure
+    axes[3].plot(time_range[: len(time_range)-1], alarms_vals[0, :])  # alarm value
+
+    set_alarms = alarms_vals[1, :]
+    set_alarms = np.array(set_alarms, dtype=bool)
+
+    axes[3].fill_between(time_range[: len(time_range)-1], axes[3].get_ylim()[0], axes[3].get_ylim()[1], where=set_alarms,
+                        color='lightgreen', alpha=0.3, label="Set off alarm")
+    axes[3].fill_between(time_range[: len(time_range)-1], axes[3].get_ylim()[0], axes[3].get_ylim()[1], where=~set_alarms,
+                        color='lightcoral', alpha=0.3, label="Set off alarm")
+    axes[3].set_title("Alarm Pressure")
+    axes[3].set_xlabel("Time [s]")
+    axes[3].set_ylabel("Alarm Pressure")
+    axes[3].grid(True)
+
+
+    plt.tight_layout()
+    plt.show()
+
