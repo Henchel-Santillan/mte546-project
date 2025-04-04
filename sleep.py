@@ -5,7 +5,7 @@ from plot import *
 
 import numpy as np
 
-from fuzzy_traffic import FuzzyAlarm, get_traffic_duration_now
+#from fuzzy_traffic import FuzzyAlarm, get_traffic_duration_now
 
 # from labels:
 # 0: awake
@@ -13,8 +13,8 @@ from fuzzy_traffic import FuzzyAlarm, get_traffic_duration_now
 # 2: n2
 # 3: n3 (deep)
 # 5: rem
-NUM_STATES = 7 # awake, core sleep = N1/N2, REM, Deep sleep = N3
-NUM_MEASUREMENTS = 3  # HRV, HR, motion (duration)
+NUM_STATES = 4 # awake, core sleep = N1/N2, REM, Deep sleep = N3
+NUM_MEASUREMENTS = 4  # HR, accelerometer x/y/z
 DEFAULT_PERSON_INDEX = 0
 
 
@@ -67,8 +67,8 @@ def get_measurement_variances(person_i: int):
 
 
 ########################### EKF FUNCTIONS ##################################
-hr_weights = [70, 65, 75, 60, 0, 0, 0]
-base_imu_weights = [1, 1, 1, 1, 0, 0, 0]
+hr_weights = [70, 65, 75, 60]
+base_imu_weights = [1, 1, 1, 1]
 
 def HJacobian(x, time, *args):
     """
@@ -93,7 +93,7 @@ def Hx(x, time, *args):
     # Columns: Wake, Core, Deep, REM, use the sleep probabilities as weights
     # Time-varying linear weighted sum approach, may need tuning or a different approach
     x = x.reshape(1, -1)
-    sleep_probabilities = np.array([x[0, 0], x[0, 1], x[0, 3], x[0, 2], 1, 1, 1])
+    sleep_probabilities = np.array([x[0, 0], x[0, 1], x[0, 2], x[0, 3]])
 
     z1 = np.dot(hr_weights * hr_sensor_model_ekf(time), sleep_probabilities)
     z2 = np.dot(base_imu_weights * np.abs(imu_sensor_model_ekf(time, ImuAxis.X_AXIS)), sleep_probabilities)
@@ -145,14 +145,21 @@ def main():
     # plot_motion_data(DEFAULT_PERSON_INDEX)
 
     # Initialize EKF
+    # Q_mat = np.array([
+    #     [0.1, 0, 0, 0, 0, 0, 0], # Awake
+    #     [0, 0.4, 0, 0, 0, 0, 0], # Core
+    #     [0, 0, 0.4, 0, 0, 0, 0], # REM
+    #     [0, 0, 0, 0.2, 0, 0, 0], # Deep
+    #     [0, 0, 0, 0, 0.5, 0, 0], # WS
+    #     [0, 0, 0.1, 0, 0.2, 0.5, 0], # T_rem
+    #     [0, 0.1, 0, 0, 0.2, 0, 0.5], # T_core
+    # ])
+
     Q_mat = np.array([
-        [0.5, 0, 0, 0, 0, 0, 0], # Awake
-        [0, 0.4, 0, 0, 0, 0, 0], # Core
-        [0, 0, 0.4, 0, 0, 0, 0], # REM
-        [0, 0, 0, 0.4, 0, 0, 0], # Deep
-        [0, 0, 0, 0, 0.5, 0, 0],
-        [0, 0, 0, 0, 0, 0.5, 0],
-        [0, 0, 0, 0, 0, 0, 0.5],
+        [0.3, 0, 0, 0], # Awake
+        [0, 0.4, 0, 0], # Core
+        [0, 0, 0.5, 0], # REM
+        [0, 0, 0, 0.9] # Deep
     ])
 
     # R matrix is diagonal, assumes measurement noises to be independent of one another
@@ -168,20 +175,23 @@ def main():
 
     ekf = EKF(NUM_STATES, NUM_MEASUREMENTS)
 
-    alpha_rem = 1.2  # rate at which REM increases 'wake score'
-    beta_core = 3  # rate at which core sleep decreases 'wake score'
-    gamma = 0.5  # decay the weight of previous values on current computation (smoothing factor)
+    # A = np.array([
+    #     [0.3095, 0.6905, 0, 0, 0, 0, 0], # Awake
+    #     [0.1518, 0.4514, 0.3867, 0.01, 0, 0, 0], # Core
+    #     [0.0312, 0.2712, 0.260, 0.4375, 0, 0, 0], # REM
+    #     [0.0123, 0.3123, 0.4755, 0.2, 0, 0, 0], # Deep
+    #     [0, -beta_core, alpha_rem, 0, 1, 0, 0],  # Wake Score Eq
+    #     [0, 0, gamma_rem, 0, 0, 1 - gamma_rem, 0],  # REM Duration Eq
+    #     [0, gamma_core, 0, 0, 0, 0, 1 - gamma_core]   # Core Duration Eq
+    # ])  # 7x7
 
     A = np.array([
-        [0.3095, 0.6905, 0, 0, 0, 0, 0], # Awake
-        [0.1518, 0.4514, 0.3867, 0.01, 0, 0, 0], # Core
-        [0.0312, 0.2712, 0.260, 0.4375, 0, 0, 0], # REM
-        [0.0123, 0.3123, 0.4755, 0.2, 0, 0, 0], # Deep
-        [0, 0, alpha_rem, 0, 1, 0, -beta_core],  # Wake Score Eq
-        [0, 0, gamma, 0, 0, 1 - gamma, 0],  # REM Duration Eq
-        [0, gamma, 0, 0, 0, 0, 1 - gamma]   # Core Duration Eq
-    ])  # 7x7
-
+        [0.3095, 0.6905, 0, 0], # Awake
+        [0.1518, 0.5014, 0.3367, 0.01], # Core
+        [0.0112, 0.3012, 0.3475, 0.340], # Deep
+        [0.2223, 0.2522, 0.1055, 0.32] # REM
+    ])
+ 
     ekf.F = A
     ekf.P = Q_mat
     ekf.R = R_mat
@@ -191,22 +201,33 @@ def main():
     ekf.x = np.array([
         1,  # P(awake)
         0,  # P(core)
-        0,  # P(rem)
         0,  # P(deep)
-        0,  # wake_score
-        0,  # time in rem (keep track of time inside because our states are probabilisitic, meaning we actually don't know if the person has exited a state to reset it manually ourselves)
-        0   # time in core
+        0  # P(rem)
+        # 0,  # wake_score
+        # 0,  # time in rem (keep track of time inside because our states are probabilisitic, meaning we actually don't know if the person has exited a state to reset it manually ourselves)
+        # 0   # time in core
     ])  # 1x7
 
     # # Main Loop
-    fuzzy_alarm = FuzzyAlarm()
-    fuzzy_vals = []
+    # fuzzy_alarm = FuzzyAlarm()
+    # fuzzy_vals = []
 
     estimated_states = []  # store them in an array so we can see how it evolves
     ground_truth_states = []
 
     start_time = 930
     final_time = 14400 # 4 hours in seconds
+
+
+    # Wake score parameters
+
+    alpha_rem = 0.5  # rate at which REM increases 'wake score'
+    beta_core = 5  # rate at which core sleep decreases 'wake score'
+    gamma_rem = 0.8  # decay the weight of previous values on current computation (smoothing factor)
+    gamma_core = 0.95
+
+    wake_score = 10
+    wake_scores = []    # used to track evolution of wake score over time
 
     curr_time = start_time
     while curr_time < final_time:
@@ -216,8 +237,25 @@ def main():
         curr_z = np.array(patient_data[:-1])  # exclude ground truth state
         curr_z = curr_z.reshape(-1, 1)
 
-        ekf.predict_update(curr_z, HJacobian, Hx, args=(curr_time, start_time), hx_args=(curr_time, start_time))
+        ekf.predict_update(curr_z, HJacobian, Hx, args=(curr_time), hx_args=(curr_time))
         posterior_state = ekf.x
+
+        likeliest_state_index = np.argmax(posterior_state)
+        if likeliest_state_index == 1:
+            # Core sleep, decrease WS
+            print("In CORE")
+            #wake_score = max(0, wake_score - TIME_STEP_SEC * beta_core)
+            wake_score -= beta_core
+        elif likeliest_state_index == 3:
+            # REM sleep, increase WS
+            print("In REM")
+            #wake_score = min(100, wake_score + TIME_STEP_SEC * alpha_rem)
+            if curr_time > 10000:
+                wake_score += alpha_rem
+            else:
+                wake_score += 5
+
+        wake_scores.append(wake_score)
 
         # record states for plotting
         estimated_states.append(posterior_state)
@@ -225,39 +263,40 @@ def main():
 
 
         # === Alarm (Fuzzy) ===
-        travel_time = get_traffic_duration_now(HOME_ADDRESS_GPS, DESTINATION_GPS) # in seconds
+        # travel_time = get_traffic_duration_now(HOME_ADDRESS_GPS, DESTINATION_GPS) # in seconds
 
-        curr_wake_score = posterior_state[4, 0]
-        alarm_pressure = fuzzy_alarm.compute_alarm_pressure(wake_score=curr_wake_score, traffic_delay=travel_time)
-        curr_trigger_alarm = False
-        if alarm_pressure >= 70:
-            curr_trigger_alarm = True
+        # curr_wake_score = posterior_state[4, 0]
+        # alarm_pressure = fuzzy_alarm.compute_alarm_pressure(wake_score=curr_wake_score, traffic_delay=travel_time)
+        # curr_trigger_alarm = False
+        # if alarm_pressure >= 70:
+        #     curr_trigger_alarm = True
 
-        curr_alarm_vals = np.array([
-            [alarm_pressure],
-            [curr_trigger_alarm]
-        ])
+        # curr_alarm_vals = np.array([
+        #     [alarm_pressure],
+        #     [curr_trigger_alarm]
+        # ])
 
-        fuzzy_vals.append(curr_alarm_vals)
-
-
+        # fuzzy_vals.append(curr_alarm_vals)
 
         curr_time += TIME_STEP_SEC
 
-    # plot_ekf_states(
-    #     np.hstack(estimated_states),
-    #     ground_truth_states,
-    #     start_time,
-    #     final_time
-    # )
+    print(wake_score)
 
-    plot_ekf_states_and_alarm(
+    plot_ekf_states(
         np.hstack(estimated_states),
         ground_truth_states,
-        np.hstack(fuzzy_vals),
+        wake_scores,
         start_time,
         final_time
     )
+
+    # plot_ekf_states_and_alarm(
+    #     np.hstack(estimated_states),
+    #     ground_truth_states,
+    #     np.hstack(fuzzy_vals),
+    #     start_time,
+    #     final_time
+    # )
 
 if __name__ == "__main__":
     main()

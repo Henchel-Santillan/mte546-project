@@ -112,7 +112,7 @@ def plot_ground_truth(person_i: int) -> None:
     plt.plot(state_time, state_val, label="Ground Truth State")
 
 
-def plot_ekf_states(states: np.array, ground_truth_states: list, start_time: float, final_time: float):
+def plot_ekf_states(states: np.array, ground_truth_states: list, wake_scores: list, start_time: float, final_time: float):
     labels = [
         "P(awake)",
         "P(core)",
@@ -131,11 +131,11 @@ def plot_ekf_states(states: np.array, ground_truth_states: list, start_time: flo
     #     if labels[state_i] != "Wake Score":
     #         axes[0].plot(time_range[: len(time_range)-1], states[state_i, :], label=labels[state_i])
 
-    for state_i in range(0, 3 + 1):
+    for state_i in range(0, 4):
         axes[0].plot(time_range[: len(time_range)-1], - 1 * states[state_i, :], label=labels[state_i])
 
-    for state_i in range(5, len(labels)):
-        axes[0].plot(time_range[: len(time_range)-1], states[state_i, :], label=labels[state_i])
+    # for state_i in range(5, len(labels)):
+    #     axes[0].plot(time_range[: len(time_range)-1], states[state_i, :], label=labels[state_i])
 
     axes[0].set_title("Predicted States")
     axes[0].set_xlabel("Time [s]")
@@ -162,11 +162,11 @@ def plot_ekf_states(states: np.array, ground_truth_states: list, start_time: flo
     axes[1].legend()
     axes[1].grid(True)
 
-    # Sleep score
-    axes[2].plot(time_range[: len(time_range)-1], states[4, :])
-    axes[2].set_title("Sleep Score")
+    # Wake score
+    axes[2].plot(time_range[: len(time_range)-1], wake_scores)
+    axes[2].set_title("Wake Score")
     axes[2].set_xlabel("Time [s]")
-    axes[2].set_ylabel("Sleep Score")
+    axes[2].set_ylabel("Wake Score")
     axes[2].grid(True)
 
     plt.tight_layout()
