@@ -5,7 +5,7 @@ from plot import *
 
 import numpy as np
 
-from fuzzy_traffic import FuzzyAlarm, get_traffic_duration_now
+from fuzzy_traffic import FuzzyAlarm, get_traffic_duration_now, get_time_to_deadline
 
 # from labels:
 # 0: awake
@@ -206,9 +206,12 @@ def main():
     ground_truth_states = []
 
     start_time = 930
-    final_time = 14400 # 4 hours in seconds
+    # final_time = 14400 # 4 hours in seconds
+    final_time = 28800 # 8 hours in seconds
 
     curr_time = start_time
+    fuzzy_alarm.plot_fuzzy_sets()
+    
     while curr_time < final_time:
         # === Sleep states ===
         patient_data = get_data_at_time(curr_time)
@@ -226,9 +229,15 @@ def main():
 
         # === Alarm (Fuzzy) ===
         travel_time = get_traffic_duration_now(HOME_ADDRESS_GPS, DESTINATION_GPS) # in seconds
+        travel_time = travel_time // 60  # 17 mins
+        time_to_deadline = get_time_to_deadline(curr_time)
+        time_to_leave = time_to_deadline - travel_time  # mins left before you have to leave
+        
 
         curr_wake_score = posterior_state[4, 0]
-        alarm_pressure = fuzzy_alarm.compute_alarm_pressure(wake_score=curr_wake_score, traffic_delay=travel_time)
+        curr_wake_score = min(100, curr_wake_score)
+        alarm_pressure = fuzzy_alarm.compute_alarm_pressure(wake_score=curr_wake_score, time_to_leave=time_to_leave)
+        # alarm_pressure = fuzzy_alarm.compute_alarm_pressure(wake_score=curr_wake_score, traffic_delay=travel_time, time_to_deadline=time_to_deadline)
         curr_trigger_alarm = False
         if alarm_pressure >= 70:
             curr_trigger_alarm = True
@@ -250,6 +259,7 @@ def main():
     #     start_time,
     #     final_time
     # )
+
 
     plot_ekf_states_and_alarm(
         np.hstack(estimated_states),
