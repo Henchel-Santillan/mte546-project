@@ -120,5 +120,5 @@ By: Henchel Santillan, Jason Xue, Joshua Alexander Auw-Yang
 
 * The setup assumes the person sleeps at midnight and has a desired time of arrival at their destination of 9:00 AM
 
-* NOTE: the implementation uses live data from the google maps API. The mode that does not use the API call is when `PRODUCTION = False` in `fuzzy_traffic.py:20`.
+* NOTE: the implementation uses live data from the google maps API. Using the google maps API requires an API key. See [here](https://github.com/googlemaps/google-maps-services-python?tab=readme-ov-file#api-keys) on how to generate one. The mode that does not use the API call is when `PRODUCTION = False` in `fuzzy_traffic.py:20`.
 * The `PRODUCTION = False` mode sets a scenario in which the traffic data remains static, with 1 hour of total travel time to the user's position.
