@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 
 # Example code: https://github.com/edgargutgzz/sanpedro_trafficdata/blob/master/traffic.py#L24
 # Documentation: https://developers.google.com/maps/documentation/distance-matrix/distance-matrix?_gl=1*t9cw1u*_up*MQ..*_ga*NDg1MTAzNzc2LjE3NDM2NDgzOTQ.*_ga_NRWSTWS78N*MTc0MzY0ODM5NC4xLjEuMTc0MzY0ODYzOS4wLjAuMA..#distance-matrix-advanced
-API_KEY = 'AIzaSyCVFGP1yOSeNCDNFaQbx4EVYt3tKr_Z-Mc'
+API_KEY = ''
 gmaps = googlemaps.Client(key=API_KEY)
 
 HOME_ADDRESS_GPS = (43.4288496, -80.4105815)  # 208 Grand River Blvd, Kitchener, ON N2A 3G6

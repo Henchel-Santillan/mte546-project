@@ -114,6 +114,11 @@ By: Henchel Santillan, Jason Xue, Joshua Alexander Auw-Yang
 
 ## Running the code
 
-The main file in this repository is `sleep.py`. After entering the environment, run the following in the terminal:
+* The main file in this repository is `sleep.py`. After entering the environment, run the following in the terminal:
 
-```python sleep.py``` 
+    ```python sleep.py``` 
+
+* The setup assumes the person sleeps at midnight and has a desired time of arrival at their destination of 9:00 AM
+
+* NOTE: the implementation uses live data from the google maps API. For security reasons (and saving costs for  group members), the API key has been removed and an alternate mode has been set. The mode that does not use the API call is when `PRODUCTION = False` in `fuzzy_traffic.py:20`.
+* The `PRODUCTION = False` mode sets a scenario in which the traffic data remains static, with 1 hour of total travel time to the user's position.
