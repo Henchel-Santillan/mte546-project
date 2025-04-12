@@ -121,8 +121,7 @@ def get_data_at_time(time: int):
         timestamps = np.array(timestamps)
         valid_timestamps = timestamps[timestamps <= time]
 
-        if len(valid_timestamps) == 0:  # JOSH: the case where there are no matching time stamps
-            print("NOOOOOOOOOOOOOOOOOOOOOOOO")  # idk what to do, maybe fix by setting t=15 and resume at 30 afterwards? this should never run
+        if len(valid_timestamps) == 0:  # case: no matching time stamps (shouldnt ever be the case)
             print(time)
             print(timestamps)
 
@@ -138,11 +137,7 @@ def get_data_at_time(time: int):
 
 def main():
     # Extract the data from the .txt files
-    # parse_data_files(DEFAULT_DATA_ROOT_DIR)
-    #print(data_map[DataType.MOTION.name][0].data)
     parse_data_file(DEFAULT_DATA_ROOT_DIR, "4314139")
-    # plot_heartrate_data(DEFAULT_PERSON_INDEX)
-    # plot_motion_data(DEFAULT_PERSON_INDEX)
 
     # Initialize EKF
     Q_mat = np.array([
@@ -206,7 +201,6 @@ def main():
     ground_truth_states = []
 
     start_time = 930
-    # final_time = 14400 # 4 hours in seconds
     final_time = 28800 # 8 hours in seconds
 
     curr_time = start_time
@@ -229,7 +223,7 @@ def main():
 
         # === Alarm (Fuzzy) ===
         travel_time = get_traffic_duration_now(HOME_ADDRESS_GPS, DESTINATION_GPS) # in seconds
-        travel_time = travel_time // 60  # 17 mins
+        travel_time = travel_time // 60
         time_to_deadline = get_time_to_deadline(curr_time)
         time_to_leave = time_to_deadline - travel_time  # mins left before you have to leave
         
@@ -237,7 +231,6 @@ def main():
         curr_wake_score = posterior_state[4, 0]
         curr_wake_score = min(100, curr_wake_score)
         alarm_pressure = fuzzy_alarm.compute_alarm_pressure(wake_score=curr_wake_score, time_to_leave=time_to_leave)
-        # alarm_pressure = fuzzy_alarm.compute_alarm_pressure(wake_score=curr_wake_score, traffic_delay=travel_time, time_to_deadline=time_to_deadline)
         curr_trigger_alarm = False
         if alarm_pressure >= 70:
             curr_trigger_alarm = True
@@ -249,17 +242,7 @@ def main():
 
         fuzzy_vals.append(curr_alarm_vals)
 
-
-
         curr_time += TIME_STEP_SEC
-
-    # plot_ekf_states(
-    #     np.hstack(estimated_states),
-    #     ground_truth_states,
-    #     start_time,
-    #     final_time
-    # )
-
 
     plot_ekf_states_and_alarm(
         np.hstack(estimated_states),
@@ -271,102 +254,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-##### EKF.py
-# def predict_update(self, z, HJacobian, Hx, args=(), hx_args=(), u=0):
-#         """ Performs the predict/update innovation of the extended Kalman
-#         filter.
-
-#         Parameters
-#         ----------
-
-#         z : np.array
-#             measurement for this step.
-#             If `None`, only predict step is perfomed.
-
-#         HJacobian : function
-#            function which computes the Jacobian of the H matrix (measurement
-#            function). Takes state variable (self.x) as input, along with the
-#            optional arguments in args, and returns H.
-
-#         Hx : function
-#             function which takes as input the state variable (self.x) along
-#             with the optional arguments in hx_args, and returns the measurement
-#             that would correspond to that state.
-
-#         args : tuple, optional, default (,)
-#             arguments to be passed into HJacobian after the required state
-#             variable.
-
-#         hx_args : tuple, optional, default (,)
-#             arguments to be passed into Hx after the required state
-#             variable.
-
-#         u : np.array or scalar
-#             optional control vector input to the filter.
-#         """
-#         #pylint: disable=too-many-locals
-
-#         if not isinstance(args, tuple):
-#             args = (args,)
-
-#         if not isinstance(hx_args, tuple):
-#             hx_args = (hx_args,)
-
-#         if np.isscalar(z) and self.dim_z == 1:
-#             z = np.asarray([z], float)
-#         F = self.F
-#         B = self.B
-#         P = self.P
-#         Q = self.Q
-#         R = self.R
-#         x = self.x
-
-#         H = HJacobian(x, *args)
-
-#         # predict step
-#         x = dot(F, x) + dot(B, u)
-#         P = dot(F, P).dot(F.T) + Q
-
-#         # save prior
-#         self.x_prior = np.copy(self.x)
-#         self.P_prior = np.copy(self.P)
-
-#         # update step
-#         PHT = dot(P, H.T)
-
-#         # print(f"PHT: {PHT.shape}")
-#         self.S = dot(H, PHT) + R
-#         self.SI = linalg.inv(self.S)
-#         self.K = dot(PHT, self.SI)
-#         # print(f"K: {self.K.shape}")
-
-#         self.y = z - Hx(x, *hx_args)
-#         # print(f"z_val: {z}")
-
-#         # print(f"z: {z.shape}")
-#         # print(f"Hx: {Hx(x, *hx_args).shape}")
-
-#         # print(f"y: {self.y.shape}")
-#         # print(f"Hx_val: {Hx(x, *hx_args)}")
-#         # print(f"y_val: {self.y}")
-#         # print(f"K_dot_y: {dot(self.K, self.y).shape}")
-#         # print(f"x: {x.shape}")
-
-
-#         self.x = x.reshape(-1,1) + dot(self.K, self.y)  # HEEEREREERERE
-
-#         I_KH = self._I - dot(self.K, H)
-#         self.P = dot(I_KH, P).dot(I_KH.T) + dot(self.K, R).dot(self.K.T)
-
-#         # save measurement and posterior state
-#         self.z = deepcopy(z)
-#         self.x_post = self.x.copy()
-#         self.P_post = self.P.copy()
-
-#         # set to None to force recompute
-#         self._log_likelihood = None
-#         self._likelihood = None
-#         self._mahalanobis = None
